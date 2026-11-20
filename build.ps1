@@ -1,14 +1,19 @@
 [CmdletBinding()]
 param(
-    [switch]$SkipTests
+    [switch]$SkipTests,
+    [switch]$SkipReleaseCopy
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $srcDir = Join-Path $repoRoot "src"
+$installerDir = Join-Path $repoRoot "installer"
 $testsDir = Join-Path $repoRoot "tests"
 $distDir = Join-Path $repoRoot "dist"
+$releaseDir = Join-Path $repoRoot "release"
+$assetsDir = Join-Path $repoRoot "assets"
+$iconPath = Join-Path $assetsDir "SpotifyNoSleep.ico"
 
 $frameworkDir = "C:\Windows\Microsoft.NET\Framework64\v4.0.30319"
 if (-not (Test-Path (Join-Path $frameworkDir "csc.exe"))) {
@@ -35,7 +40,12 @@ if (-not (Test-Path $distDir)) {
     New-Item -ItemType Directory -Path $distDir | Out-Null
 }
 
+# Generate multi-resolution Windows application icon (.ico)
+Write-Host "Generating application icon..." -ForegroundColor Cyan
+& (Join-Path $repoRoot "tools\generate_icon.ps1") -OutputPath $iconPath
+
 $appExe = Join-Path $distDir "SpotifyNoSleep.exe"
+$setupExe = Join-Path $distDir "SpotifyNoSleep-Setup.exe"
 $sourceFiles = Get-ChildItem -Path $srcDir -Filter "*.cs" | ForEach-Object { $_.FullName }
 
 Write-Host "Building SpotifyNoSleep.exe..." -ForegroundColor Cyan
@@ -45,6 +55,7 @@ $appArgs = @(
     "/target:winexe",
     "/optimize+",
     "/platform:anycpu",
+    "/win32icon:$iconPath",
     "/out:$appExe",
     "/r:System.dll",
     "/r:System.Core.dll",
@@ -60,8 +71,38 @@ $appArgs = @(
 if ($LASTEXITCODE -ne 0) {
     throw "Compilation of SpotifyNoSleep.exe failed with exit code $LASTEXITCODE"
 }
-
 Write-Host "Built: $appExe" -ForegroundColor Green
+
+Write-Host "Building self-contained installer SpotifyNoSleep-Setup.exe..." -ForegroundColor Cyan
+
+$installerArgs = @(
+    "/nologo",
+    "/target:winexe",
+    "/optimize+",
+    "/platform:anycpu",
+    "/win32icon:$iconPath",
+    "/resource:$appExe,SpotifyNoSleep.exe",
+    "/out:$setupExe",
+    "/r:System.dll",
+    "/r:System.Drawing.dll",
+    "/r:System.Windows.Forms.dll",
+    (Join-Path $installerDir "InstallerProgram.cs")
+)
+
+& $csc @installerArgs
+if ($LASTEXITCODE -ne 0) {
+    throw "Compilation of SpotifyNoSleep-Setup.exe failed with exit code $LASTEXITCODE"
+}
+Write-Host "Built: $setupExe" -ForegroundColor Green
+
+if (-not $SkipReleaseCopy) {
+    if (-not (Test-Path $releaseDir)) {
+        New-Item -ItemType Directory -Path $releaseDir | Out-Null
+    }
+    Copy-Item -Path $appExe -Destination (Join-Path $releaseDir "SpotifyNoSleep.exe") -Force
+    Copy-Item -Path $setupExe -Destination (Join-Path $releaseDir "SpotifyNoSleep-Setup.exe") -Force
+    Write-Host "Updated runnable binaries in: $releaseDir" -ForegroundColor Green
+}
 
 if (-not $SkipTests) {
     $testExe = Join-Path $distDir "SpotifyNoSleep.Tests.exe"

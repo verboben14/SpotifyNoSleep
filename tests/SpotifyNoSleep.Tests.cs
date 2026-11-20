@@ -26,6 +26,7 @@ namespace SpotifyNoSleep.Tests
             Run("TrayIconFactory_CreatesAllVisualStates", TestTrayIconFactory);
             Run("PowerManager_AcquireAndReleaseKernelPowerRequest", TestPowerManager);
             Run("LiveDetectors_RunCleanly", TestLiveDetectors);
+            Run("InstallerExecutable_ContainsEmbeddedAppPayload", TestInstallerContainsPayload);
 
             Console.WriteLine();
             Console.WriteLine(string.Format("Tests finished: {0} passed, {1} failed.", _passed, _failed));
@@ -351,6 +352,24 @@ namespace SpotifyNoSleep.Tests
 
             WindowTitleSnapshot win = new WindowTitleDetector().Detect();
             AssertTrue(win != null, "WindowTitleDetector returned snapshot");
+        }
+
+        private static void TestInstallerContainsPayload()
+        {
+            string testDir = AppDomain.CurrentDomain.BaseDirectory;
+            string appExePath = Path.Combine(testDir, "SpotifyNoSleep.exe");
+            string setupExePath = Path.Combine(testDir, "SpotifyNoSleep-Setup.exe");
+
+            AssertTrue(File.Exists(appExePath), "dist/SpotifyNoSleep.exe should exist");
+            AssertTrue(File.Exists(setupExePath), "dist/SpotifyNoSleep-Setup.exe should exist");
+
+            byte[] expectedBytes = File.ReadAllBytes(appExePath);
+            System.Reflection.Assembly setupAsm = System.Reflection.Assembly.ReflectionOnlyLoadFrom(setupExePath);
+            using (Stream payload = setupAsm.GetManifestResourceStream("SpotifyNoSleep.exe"))
+            {
+                AssertTrue(payload != null, "Installer must embed SpotifyNoSleep.exe resource");
+                AssertEqual(expectedBytes.Length, (int)payload.Length, "Embedded payload length must match SpotifyNoSleep.exe");
+            }
         }
     }
 }

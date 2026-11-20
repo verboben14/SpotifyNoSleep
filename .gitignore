@@ -1,7 +1,6 @@
 dist/
 bin/
 obj/
-*.exe
 *.pdb
 *.log
 *.log.old

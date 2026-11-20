@@ -22,6 +22,12 @@ if ($existingReg) {
     Write-Host "Removed Windows startup entry." -ForegroundColor Green
 }
 
+$existingTask = Get-ScheduledTask -TaskName "SpotifyNoSleep" -ErrorAction SilentlyContinue
+if ($existingTask) {
+    Unregister-ScheduledTask -TaskName "SpotifyNoSleep" -Confirm:$false
+    Write-Host "Removed SpotifyNoSleep scheduled task." -ForegroundColor Green
+}
+
 if (Test-Path $installDir) {
     Remove-Item -Path $installDir -Recurse -Force
     Write-Host "Removed installed binaries: $installDir" -ForegroundColor Green

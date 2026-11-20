@@ -62,6 +62,15 @@ Set-ItemProperty -Path $regPath -Name "SpotifyNoSleep" -Value "`"$installedExe`"
 Write-Host "Enabled automatic Windows startup: `"$installedExe`"" -ForegroundColor Green
 
 if (-not $NoLaunch) {
-    Start-Process -FilePath $installedExe
+    try {
+        $action = New-ScheduledTaskAction -Execute $installedExe
+        $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+        $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Seconds 0)
+        Register-ScheduledTask -TaskName "SpotifyNoSleep" -Action $action -Trigger $trigger -Settings $settings -Force | Out-Null
+        Start-ScheduledTask -TaskName "SpotifyNoSleep"
+    }
+    catch {
+        Start-Process -FilePath $installedExe
+    }
     Write-Host "SpotifyNoSleep.exe is now running silently in your system tray." -ForegroundColor Cyan
 }

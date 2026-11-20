@@ -9,13 +9,10 @@ $installDir = Join-Path $env:LOCALAPPDATA "SpotifyNoSleep"
 $dataDir = Join-Path $env:APPDATA "SpotifyNoSleep"
 $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
 
-$existingProcs = Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" -ErrorAction SilentlyContinue |
-    Where-Object { $_.CommandLine -and $_.CommandLine -like "*spotify_no_sleep.py*" }
-foreach ($proc in $existingProcs) {
-    Write-Host "Stopping SpotifyNoSleep (PID $($proc.ProcessId))..." -ForegroundColor Yellow
-    Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
-}
-if ($existingProcs) {
+$running = Get-Process -Name "SpotifyNoSleep" -ErrorAction SilentlyContinue
+if ($running) {
+    Write-Host "Stopping SpotifyNoSleep..." -ForegroundColor Yellow
+    $running | Stop-Process -Force
     Start-Sleep -Milliseconds 400
 }
 
@@ -27,7 +24,7 @@ if ($existingReg) {
 
 if (Test-Path $installDir) {
     Remove-Item -Path $installDir -Recurse -Force
-    Write-Host "Removed installed app: $installDir" -ForegroundColor Green
+    Write-Host "Removed installed binaries: $installDir" -ForegroundColor Green
 }
 
 if ($RemoveData -and (Test-Path $dataDir)) {

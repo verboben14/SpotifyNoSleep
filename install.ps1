@@ -1,41 +1,43 @@
 [CmdletBinding()]
 param(
     [switch]$NoLaunch,
-    [switch]$SkipTests
+    [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$distExe = Join-Path $repoRoot "dist\SpotifyNoSleep.exe"
 $installDir = Join-Path $env:LOCALAPPDATA "SpotifyNoSleep"
-$entryScript = Join-Path $installDir "spotify_no_sleep.pyw"
+$installedExe = Join-Path $installDir "SpotifyNoSleep.exe"
 
-$pythonCmd = Get-Command python -ErrorAction SilentlyContinue
-if (-not $pythonCmd) {
-    throw "Python 3 was not found in PATH. Please install Python 3.10+ from python.org."
-}
-$pythonExe = $pythonCmd.Source
-$pythonwExe = Join-Path (Split-Path -Parent $pythonExe) "pythonw.exe"
-if (-not (Test-Path $pythonwExe)) {
-    $pythonwExe = $pythonExe
-}
-
-if (-not $SkipTests) {
-    Write-Host "Running SpotifyNoSleep test suite..." -ForegroundColor Cyan
-    & $pythonExe -m unittest discover -s (Join-Path $repoRoot "tests") -v
+if (-not $SkipBuild) {
+    & (Join-Path $repoRoot "build.ps1")
     if ($LASTEXITCODE -ne 0) {
-        throw "Unit tests failed with exit code $LASTEXITCODE"
+        throw "Build failed."
     }
 }
 
-# Stop any existing SpotifyNoSleep background instance before replacing files.
-$existingProcs = Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" -ErrorAction SilentlyContinue |
+if (-not (Test-Path $distExe)) {
+    throw "Built executable not found at $distExe. Run build.ps1 first."
+}
+
+# Stop any existing SpotifyNoSleep.exe instance
+$running = Get-Process -Name "SpotifyNoSleep" -ErrorAction SilentlyContinue
+if ($running) {
+    Write-Host "Stopping existing SpotifyNoSleep process..." -ForegroundColor Yellow
+    $running | Stop-Process -Force
+    Start-Sleep -Milliseconds 400
+}
+
+# Also stop any legacy pythonw.exe instance from an earlier install
+$legacyProcs = Get-CimInstance Win32_Process -Filter "Name='pythonw.exe' OR Name='python.exe'" -ErrorAction SilentlyContinue |
     Where-Object { $_.CommandLine -and $_.CommandLine -like "*spotify_no_sleep.py*" }
-foreach ($proc in $existingProcs) {
-    Write-Host "Stopping existing SpotifyNoSleep process (PID $($proc.ProcessId))..." -ForegroundColor Yellow
+foreach ($proc in $legacyProcs) {
+    Write-Host "Stopping legacy Python SpotifyNoSleep process (PID $($proc.ProcessId))..." -ForegroundColor Yellow
     Stop-Process -Id $proc.ProcessId -Force -ErrorAction SilentlyContinue
 }
-if ($existingProcs) {
+if ($legacyProcs) {
     Start-Sleep -Milliseconds 400
 }
 
@@ -43,22 +45,23 @@ if (-not (Test-Path $installDir)) {
     New-Item -ItemType Directory -Path $installDir -Force | Out-Null
 }
 
-Copy-Item -Path (Join-Path $repoRoot "spotify_no_sleep.py") -Destination $installDir -Force
-Copy-Item -Path (Join-Path $repoRoot "spotify_no_sleep.pyw") -Destination $installDir -Force
-$pkgDest = Join-Path $installDir "spotify_nosleep"
-if (Test-Path $pkgDest) {
-    Remove-Item -Path $pkgDest -Recurse -Force
+# Clean up any legacy Python files if upgrading in-place
+foreach ($legacyItem in @("spotify_no_sleep.py", "spotify_no_sleep.pyw", "spotify_nosleep")) {
+    $legacyPath = Join-Path $installDir $legacyItem
+    if (Test-Path $legacyPath) {
+        Remove-Item -Path $legacyPath -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
-Copy-Item -Path (Join-Path $repoRoot "spotify_nosleep") -Destination $pkgDest -Recurse -Force
-Write-Host "Installed to: $installDir" -ForegroundColor Green
+
+Copy-Item -Path $distExe -Destination $installedExe -Force
+Write-Host "Installed to: $installedExe" -ForegroundColor Green
 
 # Register automatic startup on Windows logon (current user, no admin privileges required).
 $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Run"
-$startupCommand = "`"$pythonwExe`" `"$entryScript`""
-Set-ItemProperty -Path $regPath -Name "SpotifyNoSleep" -Value $startupCommand
-Write-Host "Enabled automatic Windows startup: $startupCommand" -ForegroundColor Green
+Set-ItemProperty -Path $regPath -Name "SpotifyNoSleep" -Value "`"$installedExe`""
+Write-Host "Enabled automatic Windows startup: `"$installedExe`"" -ForegroundColor Green
 
 if (-not $NoLaunch) {
-    Start-Process -FilePath $pythonwExe -ArgumentList "`"$entryScript`"" -WorkingDirectory $installDir
-    Write-Host "SpotifyNoSleep is now running silently in your system tray." -ForegroundColor Cyan
+    Start-Process -FilePath $installedExe
+    Write-Host "SpotifyNoSleep.exe is now running silently in your system tray." -ForegroundColor Cyan
 }
